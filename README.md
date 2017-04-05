@@ -1,6 +1,6 @@
-# Project Name
+# NAPALM-SROS
 
-TODO: Write a project description
+A SROS (Nokia, ex ALU) NAPALM driver.
 
 ## Installation
 
@@ -20,12 +20,13 @@ TODO: Write usage instructions
 
 ## History
 
-TODO: Write history
+The first version.
 
 ## Credits
 
-TODO: Write credits
+Original author: Fernando Garcia
+Using templates from: David Barroso
 
 ## License
 
-TODO: Write license
+Apache 2.0 (see LICENSE file)
