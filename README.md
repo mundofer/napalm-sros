@@ -11,7 +11,7 @@ TODO: Describe the installation process
 This driver tries to use netconf when possible (ncclient library) and if the function can't be implemented with netconf, revert back to ssh (netmiko library).
 
 You must configured the following in your SR 7750 router (version 14.0 or later):
-
+```
     system
         security
             user "xxx"
@@ -23,7 +23,7 @@ You must configured the following in your SR 7750 router (version 14.0 or later)
         exit
         ssh
         exit
-
+```
 
 ## Contributing
 
@@ -39,8 +39,8 @@ The first version.
 
 ## Credits
 
-Original author: Fernando Garcia
-Using templates from: David Barroso
+- Original author: Fernando Garcia
+- Using templates from: David Barroso
 
 ## License
 
