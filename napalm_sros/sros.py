@@ -176,16 +176,18 @@ class SRosDriver(NetworkDriver):
         self.ssh = ConnectHandler(**nokia_sr)
 
         try:
-            self.mgr = manager.connect_ssh(host=self.hostname,port=830,username=self.username,password=self.password,device_params={'name':'alu'})
+            self.mgr = manager.connect_ssh(host=self.hostname,port=830, username=self.username, password=self.password, device_params={'name':'alu'})
         except self.mgr.transport.TransportError as ce:
             raise ConnectionException(ce.message)
 
     def close(self):
         """Implementation of NAPALM method close."""
-        self.ssh.disconnect()
-        #self.ssh = None
+        # This sleep is needed to avoid the generation of an error if the disconnect is generated just after
+        # the last command
+        sleep(10)
         self.mgr.close_session()
-        #self.mgr = None
+        self.ssh.disconnect()
+
 
     def _lock(self):
         """Lock the config DB."""
@@ -412,23 +414,24 @@ class SRosDriver(NetworkDriver):
         """
 
         configs = {}
+        # Gettig running config
+        command = "admin display-config"
+        readed_run = self.ssh.send_command(command)
+        configs['running'] = readed_run
         # The saved config file is indicated in the bof
+        #"""
+        """
         bof_values = self._getInfo('bof')
         tpl_file = open("./bof.tpl")
         re_table = textfsm.TextFSM(tpl_file)
         results_bof = re_table.ParseText(bof_values)[0]
         command = "file type " + results_bof[1]
-        #command = "admin display-config"
         readed_saved = self.ssh.send_command(command)
-        #readed_saved = ''
-        #start = readed_saved.find('configure') + 10
-        #end = readed_saved.find('# Finished')
-        #configs['startup'] = readed_saved[start:end]
         configs['startup'] = readed_saved
-        # Gettig running config
-        command = "admin display-config"
-        readed_run = self.ssh.send_command(command)
-        configs['running'] = readed_run
+        """
+        configs['startup'] = ''
+        #"""
+        #configs['startup'] = ''
         configs['candidate'] = ''
         return configs
 

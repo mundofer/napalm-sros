@@ -26,12 +26,12 @@ class   Test:
         device = None
 
     def testOpen(self):
-        hostname = '192.168.4.2'
-        username = 'fernando'
-        password = '33punnetas!'
+        hostname = '10.246.212.53'
+        username = 'fgf'
+        password = 'fgf'
 
         optional_args = {'port': 830, }
-        self.device = sros.SRosDriver(hostname, username, password, timeout=360,
+        self.device = sros.SRosDriver(hostname, username, password, timeout=10,
                                              optional_args=optional_args)
         self.device.open()
 
@@ -67,17 +67,17 @@ class   Test:
     def testGetConfig(self):
         config = self.device.get_config()
         #self.print_tree(config)
-        print config
+        print config['running']
 
     def print_tree(self,tree):
         for element in tree.iter():
             print element.tag,element.text
 
     def testPing(self):
-        print self.device.ping("192.168.4.1")
+        print self.device.ping("10.246.212.254")
 
     def testTraceroute(self):
-        print self.device.traceroute("192.168.4.1")
+        print self.device.traceroute("10.246.212.254")
 
     def testUsers(self):
         print self.device.get_users()
@@ -92,12 +92,12 @@ def main():
     test.testPorts()
     test.testInterfaces()
     test.testInterfacesIP()
-    test.testPing()
     """
+    test.testUsers()
+    test.testPing()
+    test.testTraceroute()
     test.testGetConfig()
     """
-    test.testTraceroute()
-    test.testUsers()
     """
     test.testClose()
 
