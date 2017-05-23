@@ -31,9 +31,30 @@ from napalm_base.exceptions import (
     CommandErrorException,
     )
 import textfsm
+import time
 
 #from lxml import etree as ETree
 ns = {'sros_ns':'urn:alcatel-lucent.com:sros:ns:yang:cli-content-layer-r13'}
+
+class ConfigLine():
+    """ Tree element to keep config hierarchy in memory
+    """
+
+    def __init__(self):
+        self.command = None
+        self.parameters = None
+        self.children = []
+        self.parent = None
+
+class DictPointer():
+    """ Stores config dictionary pointer, including root of dictionary, current level and indentation level
+    measured in blocks of 4 spaces = 1 level
+    """
+
+    def __init__(self):
+        self.root = None
+        self.current = None
+        self.indentation = 0
 
 class SRosDriver(NetworkDriver):
     """Napalm driver for SRos."""
@@ -58,15 +79,29 @@ class SRosDriver(NetworkDriver):
         return ''
 
 
-    def _getInfo(self,info,):
-        tree = ETree.Element("oper-data-format-cli-block")
-        command = ETree.SubElement(tree,"cli-show")
-        command.text=info
-        response = self.mgr.get(filter=('subtree',ETree.tostring(tree)))
-        parsed = ETree.fromstringlist(response._raw)
-        elements = self._getResponse(parsed)
-        #elements = response.find("{urn:alcatel-lucent.com:sros:ns:yang:cli-content-layer-r13}response")
-        return elements
+    def _getInfo(self,info):
+        """
+        return the requested information in a structured way using a dictionary
+        :param info: section requested
+        :return: dictionary of terms with key the field name and value the content of field.
+        """
+        command = "show " + info
+        readed_info = self.ssh.send_command(command)
+        return readed_info
+
+    def _getbof(self):
+        """
+        obtain the bof information from the router
+        :return: A dictionary with the terms. the key is the field name.
+        """
+        readed = self._getInfo("bof")
+        tpl_file = open("./bof.tpl")
+        re_table = textfsm.TextFSM(tpl_file)
+        list_bof = re_table.ParseText(readed)
+        dict_bof = dict(zip(["primary-image", "primary-config", "license-file", "autonegotiate", "duplex", "speed",
+                             "wait", "persist", "li-local-save", "li-separate", "fips-140-2", "console-speed"],
+                            list_bof[0]))
+        return dict_bof
 
     def _getModel(self):
         model = ''
@@ -115,51 +150,124 @@ class SRosDriver(NetworkDriver):
         return root
         #parsed = ETree.fromstringlist(response._raw)
 
-    def _extract_child(self,element,indent,config,level=None,parser=None):
+    def _extract_child(self,config,level=None,parser=None):
         # if not level, not level requested or leaf none. Append info
+        mydict = {}
         if not level:
-            if parser:
-                return parser(element)
-            else:
-                config = config +indent + element.tag
-                for attrib in element.attrib.values():
-                    config = config  + " "+ attrib
-                    config = config + "\n"
-        for child in element._children:
-            if not level:
-                # not level requested of leaf node of request
-                config = self._extract_child(child,indent+'  ',config)
-            else:
-                # recurse only if we're in the requested level tree.
-                if child.tag == level[0]:
-                    config = self._extract_child(child,indent+'  ',config,level[1:],parser)
-        return config
+            name,value = parser(config)
+            mydict[name] = value
+        else:
+            for child in config.children:
+                if level[0] == child.command:
+                    # not level requested of leaf node of request
+                    returneddict  = self._extract_child(child, level[1:], parser)
+                    mydict.update(returneddict)
+        return mydict
 
     def _parse_user(self,element):
         the_user = {}
-        for children in element._children:
-            if children.tag == 'user-name':
-                name = children.text
-            elif children.tag == 'password':
-                the_user['password'] = children.text
-            elif children.tag == 'access':
-                the_user['level'] = children.text
-            the_user['sshkeys'] = []
+        name = ''
+        if element.command == 'user':
+            name = element.parameters[0].strip('\"')
+            for field in element.children:
+                if field.command == 'password':
+                    the_user['password'] = field.parameters[0].strip('\"')
+                    the_user['level'] = ''
+                    the_user['sshkeys'] = []
         return (name, the_user)
+
+    def _strip_line(self,line):
+        """
+        detect identation level of a line
+        :param line: line to be proccessed
+        :return: indentation level, in block of 4 spaces = 1 and stripped line.
+        """
+        new_line = line.strip()
+        length = line.find(new_line) / 4
+        return length,new_line
+
+    def _process_line_config(self,line,dictpointer):
+        """
+        Process the next line of the configuration.
+        :param line: line to process
+        :param dictpointer: DictPointer to current conf object before processing line
+        Update DictPointer with current pointing to current leaf.
+        :return: True if parsing ended or False if not.
+        """
+        indentlevel,command = self._strip_line(line)
+        leafnode = ConfigLine()
+        fields = command.split()
+        leafnode.command = fields[0]
+        leafnode.parameters = fields[1:]
+        if indentlevel > dictpointer.indentation:
+            # child of current line, add it below
+            leafnode.parent = dictpointer.current
+            dictpointer.current.children.append(leafnode)
+            dictpointer.indentation = indentlevel
+            dictpointer.current = leafnode
+            return False
+        elif indentlevel == dictpointer.indentation:
+            # sister of current line, add it to the parent
+            myparent = dictpointer.current.parent
+            leafnode.parent = myparent
+            myparent.children.append(leafnode)
+            dictpointer.current = leafnode
+            return False
+        elif indentlevel == dictpointer.indentation - 1:
+            # if indent 0 and command exit all, we're finished.
+            if indentlevel == 0:
+                if leafnode.command == 'exit' and leafnode.parameters[0] == 'all':
+                    return True
+                else:
+                    raise(Exception("Indentation error parsing configuration {}".format(command)))
+            # sister of parent line. Add it to the grand parent
+            myparent = dictpointer.current.parent.parent
+            leafnode.parent = myparent
+            myparent.children.append(leafnode)
+            dictpointer.indentation = indentlevel
+            dictpointer.current = leafnode
+        else:
+            raise(Exception("Indentation error parsing configuration {}".format(command)))
+
+
+    def _parse_config(self):
+        """
+        Parse a configuration and return a dicitionary of dictionary of ....
+        :return: The main dictionary
+        """
+        command = "admin display-config"
+        readed_run = self.ssh.send_command(command)
+        in_config = False # True when detected start of config
+        # DictPointer to keep track of configuration
+        dictpointer = DictPointer()
+        rootconf = ConfigLine()
+        dictpointer.root = dictpointer.current = rootconf
+        for line in readed_run.splitlines():
+        # Look for start of configuration
+            # LInes with a # at the beginning are comments, we can ignore them
+            if not len(line) or line[0] == '#' or line.startswith("echo "):
+                continue
+            # "configure" at start of line denotes start of configuration
+            elif in_config == False:
+                if line.startswith("configure"):
+                    in_config = True
+                else:
+                    # Start of config not detected
+                    continue
+            else:
+                # We're in config
+                self._process_line_config(line,dictpointer)
+        return dictpointer
+
+
 
     def _extract_config(self,tree):
         config = self._extract_child(tree,'','')
         return config
-    """
-            for element in tree.iter():
-                command = element.tag.split('}')[1]
-                config = config +command + " " + element.text+"\n"
-            return config
-    """
 
-    def _extract_users(self,tree):
-        users = self._extract_child(tree,'','',level=["data","configure","system","security","user"],parser=self._parse_user)
-        return users
+    def _extract_users(self,config):
+        dictusers = self._extract_child(config.root, level = ["system", "security", "user"], parser = self._parse_user)
+        return dictusers
 
     def open(self):
         """Implementation of NAPALM method open."""
@@ -175,17 +283,19 @@ class SRosDriver(NetworkDriver):
         }
         self.ssh = ConnectHandler(**nokia_sr)
 
+        """
         try:
             self.mgr = manager.connect_ssh(host=self.hostname,port=830, username=self.username, password=self.password, device_params={'name':'alu'})
         except self.mgr.transport.TransportError as ce:
             raise ConnectionException(ce.message)
+        """
 
     def close(self):
         """Implementation of NAPALM method close."""
         # This sleep is needed to avoid the generation of an error if the disconnect is generated just after
         # the last command
-        sleep(10)
-        self.mgr.close_session()
+        time.sleep(10)
+        #self.mgr.close_session()
         self.ssh.disconnect()
 
 
@@ -200,7 +310,12 @@ class SRosDriver(NetworkDriver):
     def is_alive(self):
         # evaluate the state of the underlying SSH connection
         # and also the NETCONF status from PyEZ
-        return self.mgr.connected
+        command = "show uptime"
+        readed_run = self.ssh.send_command(command)
+        if readed_run.contains("System Up Time"):
+            return True
+        else:
+            return False
 
     def cli(self, commands):
 
@@ -419,19 +534,10 @@ class SRosDriver(NetworkDriver):
         readed_run = self.ssh.send_command(command)
         configs['running'] = readed_run
         # The saved config file is indicated in the bof
-        #"""
-        """
-        bof_values = self._getInfo('bof')
-        tpl_file = open("./bof.tpl")
-        re_table = textfsm.TextFSM(tpl_file)
-        results_bof = re_table.ParseText(bof_values)[0]
-        command = "file type " + results_bof[1]
+        dict_bof = self._getbof()
+        command = "file type " + dict_bof["primary-config"]
         readed_saved = self.ssh.send_command(command)
         configs['startup'] = readed_saved
-        """
-        configs['startup'] = ''
-        #"""
-        #configs['startup'] = ''
         configs['candidate'] = ''
         return configs
 
@@ -705,8 +811,7 @@ class SRosDriver(NetworkDriver):
                 }
             }
         """
-        response = self.mgr.get_config("running")
-        parsed = self._parse(response._raw)
-        return self._extract_users(parsed)
-        return parsed
+        confdict = self._parse_config()
+        return self._extract_users(confdict)
+
 

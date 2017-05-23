@@ -26,7 +26,7 @@ class   Test:
         device = None
 
     def testOpen(self):
-        hostname = '10.246.212.53'
+        hostname = '192.168.4.2'
         username = 'fgf'
         password = 'fgf'
 
@@ -74,10 +74,10 @@ class   Test:
             print element.tag,element.text
 
     def testPing(self):
-        print self.device.ping("10.246.212.254")
+        print self.device.ping("192.168.4.1")
 
     def testTraceroute(self):
-        print self.device.traceroute("10.246.212.254")
+        print self.device.traceroute("192.168.4.1")
 
     def testUsers(self):
         print self.device.get_users()
@@ -87,18 +87,16 @@ def main():
     test.testOpen()
     """
     test.testFacts()
+    """
     test.testAlive()
     test.testCli()
     test.testPorts()
     test.testInterfaces()
     test.testInterfacesIP()
-    """
-    test.testUsers()
     test.testPing()
     test.testTraceroute()
     test.testGetConfig()
-    """
-    """
+    test.testUsers()
     test.testClose()
 
 if __name__ == "__main__":

@@ -8,7 +8,9 @@ TODO: Describe the installation process
 
 ## Usage
 
-This driver tries to use netconf when possible (ncclient library) and if the function can't be implemented with netconf, revert back to ssh (netmiko library).
+This driver prevously used netconf calls when possible (ncclient library) and if the function couldn't be implemented with netconf, it reverted back to ssh (netmiko library).
+
+However I'm having many problems with the netconf calls (router problems, no library problems) so I reverted to do everything using netmiko.
 
 You must configured the following in your SR 7750 router (version 14.0 or later):
 ```
@@ -16,14 +18,38 @@ You must configured the following in your SR 7750 router (version 14.0 or later)
         security
             user "xxx"
                 password "yyyy"
-                access console netconf
+                access console
     system
-        netconf
-            no shutdown
-        exit
         ssh
         exit
 ```
+
+## Things that work:
+open
+close
+ping
+traceroute
+get_config (running and startup)
+get_interfaces
+get_interfaces_ip
+get_ports (not a standard NAPALM call. Implemented here due to the SR7750 way of configure)
+cli
+is_alive
+
+## Things that don't work:
+
+All the other NAPALM calls:
+_lock
+_unlock
+_load_candidate
+load_replace_candidate
+load_merge_candidate
+compare_config
+commit_config
+discard_config
+rollback
+
+A lot of error checking must be done
 
 ## Contributing
 
