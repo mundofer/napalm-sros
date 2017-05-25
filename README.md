@@ -25,6 +25,7 @@ You must configured the following in your SR 7750 router (version 14.0 or later)
 ```
 
 ## Things that work:
+
 - open
 - close
 - get_facts

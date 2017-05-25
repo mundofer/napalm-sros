@@ -20,9 +20,6 @@ Read https://napalm.readthedocs.io for more information.
 
 from napalm_base.base import NetworkDriver
 from netmiko import ConnectHandler
-from ncclient import manager, NCClientError
-import xml.etree.ElementTree as ETree
-from StringIO import StringIO
 from napalm_base.exceptions import (
     ConnectionException,
     SessionLockedException,
@@ -135,20 +132,6 @@ class SRosDriver(NetworkDriver):
         text = self._getInfo("uptime")
         fields = text.partition(':')
         return fields[2].strip()
-
-    def _parse(self,text):
-        it = ETree.iterparse(StringIO(text))
-        for _, el in it:
-            if '}' in el.tag:
-                el.tag = el.tag.split('}', 1)[1]  # strip all namespaces
-            for at in el.attrib.keys(): # strip namespaces of attributes too
-                if '}' in at:
-                    newat = at.split('}', 1)[1]
-                    el.attrib[newat] = el.attrib[at]
-                    del el.attrib[at]
-        root = it.root
-        return root
-        #parsed = ETree.fromstringlist(response._raw)
 
     def _extract_child(self,config,level=None,parser=None):
         # if not level, not level requested or leaf none. Append info
