@@ -85,9 +85,7 @@ class   Test:
 def main():
     test =Test()
     test.testOpen()
-    """
     test.testFacts()
-    """
     test.testAlive()
     test.testCli()
     test.testPorts()

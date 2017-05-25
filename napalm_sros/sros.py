@@ -312,7 +312,7 @@ class SRosDriver(NetworkDriver):
         # and also the NETCONF status from PyEZ
         command = "show uptime"
         readed_run = self.ssh.send_command(command)
-        if readed_run.contains("System Up Time"):
+        if "System Up Time" in readed_run:
             return True
         else:
             return False
