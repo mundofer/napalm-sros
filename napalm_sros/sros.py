@@ -29,6 +29,7 @@ from napalm_base.exceptions import (
     )
 import textfsm
 import time
+import difflib
 
 #from lxml import etree as ETree
 ns = {'sros_ns':'urn:alcatel-lucent.com:sros:ns:yang:cli-content-layer-r13'}
@@ -64,6 +65,8 @@ class SRosDriver(NetworkDriver):
         self.timeout = timeout
         self.mgr = None
         self.ssh = None
+        self.candidate = None
+        self.candidate_replace = False
 
         if optional_args is None:
             optional_args = {}
@@ -212,14 +215,38 @@ class SRosDriver(NetworkDriver):
         else:
             raise(Exception("Indentation error parsing configuration {}".format(command)))
 
-
-    def _parse_config(self):
+    def _load_running(self):
         """
-        Parse a configuration and return a dicitionary of dictionary of ....
-        :return: The main dictionary
+        We load the running config and remove the excess lines before and after the config.
+        :return: the cleaned config
         """
         command = "admin display-config"
         readed_run = self.ssh.send_command(command)
+        return self._clean_config(readed_run)
+
+    def _clean_config(self,config):
+        """
+        Clean the received config removing extra lines and beginning and end
+        :param config: config to clean
+        :return: cleaned config
+        """
+        # remove header lines
+        position = config.find("\nconfigure")
+        temp1 = config[position + 1:]
+        position = temp1.find("\nexit all")
+        return temp1[:position + 9]
+
+    def _parse_config(self, config = None):
+        """
+        Parse a configuration and return a dicitionary of dictionary of elements of configuration.
+        :param config: Config to be parsed. If it is None, we will load the running config from device
+        :return: The main dictionary
+        """
+        if not config:
+            command = "admin display-config"
+            readed_run = self.ssh.send_command(command)
+        else:
+            readed_run = config
         in_config = False # True when detected start of config
         # DictPointer to keep track of configuration
         dictpointer = DictPointer()
@@ -370,46 +397,6 @@ class SRosDriver(NetworkDriver):
         addresses as keys.
         Each IP Address dictionary has the following keys:
             * prefix_length (int)
-
-        Example::
-
-            {
-                u'FastEthernet8': {
-                    u'ipv4': {
-                        u'10.66.43.169': {
-                            'prefix_length': 22
-                        }
-                    }
-                },
-                u'Loopback555': {
-                    u'ipv4': {
-                        u'192.168.1.1': {
-                            'prefix_length': 24
-                        }
-                    },
-                    u'ipv6': {
-                        u'1::1': {
-                            'prefix_length': 64
-                        },
-                        u'2001:DB8:1::1': {
-                            'prefix_length': 64
-                        },
-                        u'2::': {
-                            'prefix_length': 64
-                        },
-                        u'FE80::3': {
-                            'prefix_length': u'N/A'
-                        }
-                    }
-                },
-                u'Tunnel0': {
-                    u'ipv4': {
-                        u'10.63.100.9': {
-                            'prefix_length': 24
-                        }
-                    }
-                }
-            }
         """
         # Get list of logical interfaces
         cliResult = self._getInfo("router interface")
@@ -441,16 +428,36 @@ class SRosDriver(NetworkDriver):
         pass
 
     def load_replace_candidate(self, filename=None, config=None):
-        """Open the candidate config and merge."""
-        pass
+        """
+        Open the candidate config and merge.
+        Populates the candidate configuration.
+        You can populate it from a file or from a string.
+        If you send both a filename and a string containing the configuration, the file takes precedence.
+        """
+        self.candidate_replace = True
+        if filename:
+            # Filename received. File takes precedence
+            cfg_file = open(filename)
+            self.candidate = self._clean_config(cfg_file.read())
+        else:
+            self.candidate = self._clean_config(config)
 
     def load_merge_candidate(self, filename=None, config=None):
         """Open the candidate config and replace."""
-        pass
+        self.candidate_replace = False
+        if filename:
+            # Filename received. File takes precedence
+            cfg_file = open(filename)
+            self.candidate = self._clean_config(cfg_file.read())
+        else:
+            self.candidate = self._clean_config(config)
 
     def compare_config(self):
         """Compare candidate config with running."""
-        pass
+        runnning_conf = self._load_running()
+        differ = difflib.ndiff(runnning_conf.splitlines(), self.candidate.splitlines())
+        return '\n'.join(differ)
+
 
     def commit_config(self):
         """Commit configuration."""
@@ -458,7 +465,7 @@ class SRosDriver(NetworkDriver):
 
     def discard_config(self):
         """Discard changes (rollback 0)."""
-        pass
+        self.candidate = None
 
     def rollback(self):
         """Rollback to previous commit."""
@@ -555,36 +562,6 @@ class SRosDriver(NetworkDriver):
 
             * ip_address (str)
             * rtt (float)
-
-        Example::
-
-            {
-                'success': {
-                    'probes_sent': 5,
-                    'packet_loss': 0,
-                    'rtt_min': 72.158,
-                    'rtt_max': 72.433,
-                    'rtt_avg': 72.268,
-                    'rtt_stddev': 0.094,
-                    'results': [
-                        {
-                            'ip_address': u'1.1.1.1',
-                            'rtt': 72.248
-                        },
-                        {
-                            'ip_address': '2.2.2.2',
-                            'rtt': 72.299
-                        }
-                    ]
-                }
-            }
-
-            OR
-
-            {
-                'error': 'unknown host 8.8.8.8.8'
-            }
-
         """
         command = "ping " + destination
         if source:
@@ -652,90 +629,6 @@ class SRosDriver(NetworkDriver):
             * rtt (float)
             * ip_address (str)
             * host_name (str)
-
-        Example::
-
-            {
-                'success': {
-                    1: {
-                        'probes': {
-                            1: {
-                                'rtt': 1.123,
-                                'ip_address': u'206.223.116.21',
-                                'host_name': u'eqixsj-google-gige.google.com'
-                            },
-                            2: {
-                                'rtt': 1.9100000000000001,
-                                'ip_address': u'206.223.116.21',
-                                'host_name': u'eqixsj-google-gige.google.com'
-                            },
-                            3: {
-                                'rtt': 3.347,
-                                'ip_address': u'198.32.176.31',
-                                'host_name': u'core2-1-1-0.pao.net.google.com'}
-                            }
-                        },
-                        2: {
-                            'probes': {
-                                1: {
-                                    'rtt': 1.586,
-                                    'ip_address': u'209.85.241.171',
-                                    'host_name': u'209.85.241.171'
-                                    },
-                                2: {
-                                    'rtt': 1.6300000000000001,
-                                    'ip_address': u'209.85.241.171',
-                                    'host_name': u'209.85.241.171'
-                                },
-                                3: {
-                                    'rtt': 1.6480000000000001,
-                                    'ip_address': u'209.85.241.171',
-                                    'host_name': u'209.85.241.171'}
-                                }
-                            },
-                        3: {
-                            'probes': {
-                                1: {
-                                    'rtt': 2.529,
-                                    'ip_address': u'216.239.49.123',
-                                    'host_name': u'216.239.49.123'},
-                                2: {
-                                    'rtt': 2.474,
-                                    'ip_address': u'209.85.255.255',
-                                    'host_name': u'209.85.255.255'
-                                },
-                                3: {
-                                    'rtt': 7.813,
-                                    'ip_address': u'216.239.58.193',
-                                    'host_name': u'216.239.58.193'}
-                                }
-                            },
-                        4: {
-                            'probes': {
-                                1: {
-                                    'rtt': 1.361,
-                                    'ip_address': u'8.8.8.8',
-                                    'host_name': u'google-public-dns-a.google.com'
-                                },
-                                2: {
-                                    'rtt': 1.605,
-                                    'ip_address': u'8.8.8.8',
-                                    'host_name': u'google-public-dns-a.google.com'
-                                },
-                                3: {
-                                    'rtt': 0.989,
-                                    'ip_address': u'8.8.8.8',
-                                    'host_name': u'google-public-dns-a.google.com'}
-                                }
-                            }
-                        }
-                    }
-
-            OR
-
-            {
-                'error': 'unknown host 8.8.8.8.8'
-            }
             """
         command = "traceroute " + destination
         if source:

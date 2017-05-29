@@ -42,6 +42,11 @@ class   Test:
     def testClose(self):
         self.device.close()
 
+    def testCandidate(self):
+        self.device.load_replace_candidate("candidate.cfg")
+        print self.device.compare_config()
+
+
     def testAlive(self):
         if self.device.is_alive():
             print "Alive"
@@ -85,6 +90,7 @@ class   Test:
 def main():
     test =Test()
     test.testOpen()
+    test.testCandidate()
     test.testFacts()
     test.testAlive()
     test.testCli()

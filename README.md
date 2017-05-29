@@ -37,6 +37,10 @@ You must configured the following in your SR 7750 router (version 14.0 or later)
 - get_ports (not a standard NAPALM call. Implemented here due to the SR7750 way of configure)
 - cli
 - is_alive
+- load_replace_candidate
+- load_merge_candidate
+- compare_config
+- discard_config
 
 ## Things that don't work:
 
@@ -44,12 +48,9 @@ All the other NAPALM calls:
 - _lock
 - _unlock
 - _load_candidate
-- load_replace_candidate
-- load_merge_candidate
-- compare_config
 - commit_config
-- discard_config
 - rollback
+... and many more
 
 A lot of error checking must be done
 
